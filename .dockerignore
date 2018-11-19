@@ -1,0 +1,6 @@
+**
+!Dockerfile
+!docker_start.sh
+!setup.py
+!locust
+!requirements.txt
