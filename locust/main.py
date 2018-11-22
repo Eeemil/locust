@@ -19,7 +19,7 @@ from .runners import LocalLocustRunner, MasterLocustRunner, SlaveLocustRunner
 from .stats import (print_error_report, print_percentile_stats, print_stats,
                     stats_printer, stats_writer, write_stat_csvs)
 from .util.time import parse_timespan
-
+from .util.csv import ClientsCsv
 _internals = [Locust, HttpLocust]
 version = locust.__version__
 
@@ -252,6 +252,18 @@ def parse_options():
         default=False,
         help="print json data of the locust classes' task execution ratio"
     )
+
+    # 
+    # 
+
+    parser.add_option(
+        '--clients-csv',
+        action='store',
+        type='str',
+        dest='clients_csv',
+        default=None,
+        help="path to csv file for controlling client count over time"
+    )
     
     # Version number (optparse gives you --version but we have to do it
     # ourselves to get -V too. sigh)
@@ -429,7 +441,21 @@ def main():
         }
         console_logger.info(dumps(task_data))
         sys.exit(0)
-    
+
+    if options.clients_csv:
+        if options.run_time:
+            logger.error("The --run-time argument cannot be used together with --clients-csv")
+            sys.exit(1)
+        logger.info("")
+        try:
+            csv = ClientsCsv(options.clients_csv)
+        except ValueError as e:
+            logger.error("Could not parse csv file: %s" % e)
+            sys.exit(1)
+        logger.error("Reading from CSV file not implemented fully yet")
+        
+        sys.exit(0)
+        
     if options.run_time:
         if not options.no_web:
             logger.error("The --run-time argument can only be used together with --no-web")
