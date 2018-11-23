@@ -8,6 +8,7 @@ class ClientsCsv(object):
 
     def __init__(self, csv_file):
         self.rows = []
+        self.initial_conditions = None
         with open(csv_file, 'r') as f:
             reader = csv.reader(f)
             header = next(reader)
@@ -31,6 +32,11 @@ class ClientsCsv(object):
                                          line_number+2)
             
         self.rows = sorted(self.rows, key=itemgetter(0))
+        first_row = self.rows[0]
+        print(first_row)
+        if first_row[0] == 0:
+            # First row has timestamp 0
+            self.initial_conditions = first_row
+            del(self.rows[0])
         if self.rows == []:
-            raise ValueError("csv file contains no data")
-        print("building a csv")
+            raise ValueError("csv file requires at least 2 rows of data")
