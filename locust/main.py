@@ -446,15 +446,38 @@ def main():
         if options.run_time:
             logger.error("The --run-time argument cannot be used together with --clients-csv")
             sys.exit(1)
-        logger.info("")
         try:
             csv = ClientsCsv(options.clients_csv)
         except ValueError as e:
             logger.error("Could not parse csv file: %s" % e)
             sys.exit(1)
         logger.error("Reading from CSV file not implemented fully yet")
-        
-        sys.exit(0)
+
+        if csv.initial_conditions is not None:
+            num_clients = csv.initial_conditions[1]
+            hatch_rate =  csv.initial_conditions[2]
+            options.num_clients = num_clients
+            logger.info("Setting num_clients=%d and hatch_rate=%d based on CSV file"
+                        % (num_clients, hatch_rate))
+
+        def hatch_over_time():
+            last_timestamp=0
+            for row in csv.rows:
+                timestamp=row[0]
+                num_clients=row[1]
+                hatch_rate=row[2]
+                gevent.sleep(timestamp-last_timestamp)
+                print(num_clients)
+                if num_clients == 0:
+                    logger.info("CSV file timestamp %d had 0 user count, stopping..."
+                                % timestamp)
+                    runners.locust_runner.quit()
+                    return
+                runners.locust_runner.start_hatching(num_clients, hatch_rate)
+                last_timestamp=timestamp
+            logger.info("CSV file depleted, will continue with %d clients indefinitely"
+                        % num_clients)
+        gevent.spawn(hatch_over_time)
         
     if options.run_time:
         if not options.no_web:
