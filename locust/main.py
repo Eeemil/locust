@@ -379,6 +379,40 @@ def load_locustfile(path):
     locusts = dict(filter(is_locust, vars(imported).items()))
     return imported.__doc__, locusts
 
+def start_csv_hatching(csv_file):
+    logger = logging.getLogger(__name__)
+    print("starting")
+    try:
+        csv = ClientsCsv(csv_file)
+    except ValueError as e:
+        logger.error("Could not parse csv file: %s" % e)
+        sys.exit(1)
+        logger.error("Reading from CSV file not implemented fully yet")
+
+    if csv.initial_conditions is not None:
+        num_clients = csv.initial_conditions[1]
+        hatch_rate =  csv.initial_conditions[2]
+        logger.info("Setting num_clients=%d and hatch_rate=%d based on CSV file"
+                    % (num_clients, hatch_rate))
+
+    def hatch_over_time():
+        last_timestamp=0
+        for row in csv.rows:
+            timestamp=row[0]
+            num_clients=row[1]
+            hatch_rate=row[2]
+            gevent.sleep(timestamp-last_timestamp)
+            if num_clients == 0:
+                logger.info("CSV file timestamp %d had 0 user count, stopping..."
+                            % timestamp)
+                runners.locust_runner.quit()
+                return
+            runners.locust_runner.start_hatching(num_clients, hatch_rate)
+            last_timestamp=timestamp
+        logger.info("CSV file depleted, will continue with %d clients indefinitely"
+                    % num_clients)
+    gevent.spawn(hatch_over_time)
+
 def main():
     parser, options, arguments = parse_options()
 
@@ -442,42 +476,12 @@ def main():
         console_logger.info(dumps(task_data))
         sys.exit(0)
 
-    if options.clients_csv:
+    if options.clients_csv and not options.master and not options.slave:
         if options.run_time:
             logger.error("The --run-time argument cannot be used together with --clients-csv")
             sys.exit(1)
-        try:
-            csv = ClientsCsv(options.clients_csv)
-        except ValueError as e:
-            logger.error("Could not parse csv file: %s" % e)
-            sys.exit(1)
-        logger.error("Reading from CSV file not implemented fully yet")
-
-        if csv.initial_conditions is not None:
-            num_clients = csv.initial_conditions[1]
-            hatch_rate =  csv.initial_conditions[2]
-            options.num_clients = num_clients
-            logger.info("Setting num_clients=%d and hatch_rate=%d based on CSV file"
-                        % (num_clients, hatch_rate))
-
-        def hatch_over_time():
-            last_timestamp=0
-            for row in csv.rows:
-                timestamp=row[0]
-                num_clients=row[1]
-                hatch_rate=row[2]
-                gevent.sleep(timestamp-last_timestamp)
-                print(num_clients)
-                if num_clients == 0:
-                    logger.info("CSV file timestamp %d had 0 user count, stopping..."
-                                % timestamp)
-                    runners.locust_runner.quit()
-                    return
-                runners.locust_runner.start_hatching(num_clients, hatch_rate)
-                last_timestamp=timestamp
-            logger.info("CSV file depleted, will continue with %d clients indefinitely"
-                        % num_clients)
-        gevent.spawn(hatch_over_time)
+        start_csv_hatching(options.clients_csv)
+        main_greenlet = runners.locust_runner.greenlet
         
     if options.run_time:
         if not options.no_web:
@@ -515,11 +519,18 @@ def main():
                 logging.info("Waiting for slaves to be ready, %s of %s connected",
                              len(runners.locust_runner.clients.ready), options.expect_slaves)
                 time.sleep(1)
-
-            runners.locust_runner.start_hatching(options.num_clients, options.hatch_rate)
-            main_greenlet = runners.locust_runner.greenlet
-            if options.run_time:
-                spawn_run_time_limit_greenlet()
+            else:
+                runners.locust_runner.start_hatching(options.num_clients, options.hatch_rate)
+                main_greenlet = runners.locust_runner.greenlet
+                if options.run_time:
+                    spawn_run_time_limit_greenlet()
+        else:
+            if options.clients_csv:
+                while len(runners.locust_runner.clients.ready)<options.expect_slaves:
+                    logging.info("Waiting for slaves to be ready, %s of %s connected",
+                                 len(runners.locust_runner.clients.ready), options.expect_slaves)
+                    time.sleep(1)
+                start_csv_hatching(options.clients_csv)
     elif options.slave:
         if options.run_time:
             logger.error("--run-time should be specified on the master node, and not on slave nodes")
